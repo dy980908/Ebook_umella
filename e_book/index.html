@@ -1,0 +1,284 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+    <title>E-Book</title>
+    <meta name="viewport" content="width = 1050, user-scalable = no" />
+    <script type="text/javascript" src="js/jquery.min.1.7.js"></script>
+    <script type="text/javascript" src="js/jquery-ui-1.8.20.custom.min.js"></script>
+    <script type="text/javascript" src="js/modernizr.2.5.3.min.js"></script>
+    <script type="text/javascript" src="js/hash.js"></script>
+    <link rel="icon" type="image/png" sizes="35x35" href="./img/favicon.png">
+</head>
+
+<body>
+    <div id="sparkle-container"></div>
+
+
+
+    <div class="zoom-icon zoom-icon-in"></div>
+
+    <div class="magazine-viewport">
+        <div class="container">
+            <div class="magazine">
+                <!-- Next button -->
+                <div ignore="1" class="next-button"></div>
+                <!-- Previous button -->
+                <div ignore="1" class="previous-button"></div>
+            </div>
+        </div>
+        <div class="bottom">
+            <div id="slider-bar" class="turnjs-slider">
+                <div id="slider"></div>
+            </div>
+        </div>
+    </div>
+
+
+    <script type="text/javascript">
+    function addPage(page, book) {
+    var element = $('<div />', {});
+    var imageUrl = 'pages/' + page + '.jpg';
+
+    var canvas = document.createElement('canvas');
+    var ctx = canvas.getContext('2d');
+
+    var img = new Image();
+img.onload = function () {
+    const dpr = window.devicePixelRatio || 1;
+    const isCover = page === 1;
+
+    const displayWidth = isCover ? 1170 : img.naturalWidth;
+    const displayHeight = isCover ? 1654 : img.naturalHeight;
+
+    canvas.width = displayWidth * dpr;
+    canvas.height = displayHeight * dpr;
+
+    canvas.style.width = displayWidth + 'px';
+    canvas.style.height = displayHeight + 'px';
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.scale(dpr, dpr);
+    ctx.drawImage(img, 0, 0, displayWidth, displayHeight);
+
+    element.append(canvas);
+
+    if (isCover) {
+        element.addClass('page page-cover');
+    }
+
+    book.turn('addPage', element, page);
+};
+
+    img.src = imageUrl;
+}
+
+
+
+
+        function loadApp() {
+            $('#canvas').fadeIn(1000);
+            var flipbook = $('.magazine');
+
+            if (flipbook.width() === 0 || flipbook.height() === 0) {
+                setTimeout(loadApp, 10);
+                return;
+            }
+
+            flipbook.turn({
+                width: 1124,
+                height: 794,
+                duration: 700,
+                gradients: true,
+                autoCenter: true,
+                elevation: 50,
+                pages: 68,
+                when: {
+                    turning: function (event, page, view) {
+                        var book = $(this);
+                        Hash.go('page/' + page).update();
+                        disableControls(page);
+                    },
+                    turned: function (event, page, view) {
+                        disableControls(page);
+                        $(this).turn('center');
+                        $('#slider').slider('value', getViewNumber($(this), page));
+                        if (page == 1) {
+                            $(this).turn('peel', 'br');
+                        }
+                    },
+                    missing: function (event, pages) {
+                        for (var i = 0; i < pages.length; i++) {
+                            addPage(pages[i], $(this));
+                        }
+                    }
+                }
+            });
+
+            $('.magazine-viewport').zoom({
+                flipbook: $('.magazine'),
+                max: function () {
+                    return largeMagazineWidth() / $('.magazine').width();
+                },
+                when: {
+                    swipeLeft: function () {
+                        $(this).zoom('flipbook').turn('next');
+                    },
+                    swipeRight: function () {
+                        $(this).zoom('flipbook').turn('previous');
+                    },
+                    resize: function (event, scale, page, pageElement) {
+                        if (scale == 1)
+                            loadSmallPage(page, pageElement);
+                        else
+                            loadLargePage(page, pageElement);
+                    },
+                    zoomIn: function () {
+                        $('#slider-bar').hide();
+                        $('.made').hide();
+                        $('.magazine').removeClass('animated').addClass('zoom-in');
+                        $('.zoom-icon').removeClass('zoom-icon-in').addClass('zoom-icon-out');
+
+                        if (!window.escTip && !$.isTouch) {
+                            escTip = true;
+                            $('<div />', { 'class': 'exit-message' })
+                                .html('<div>Press ESC to exit</div>')
+                                .appendTo($('body'))
+                                .delay(2000)
+                                .animate({ opacity: 0 }, 500, function () {
+                                    $(this).remove();
+                                });
+                        }
+                    },
+                    zoomOut: function () {
+                        $('#slider-bar').fadeIn();
+                        $('.exit-message').hide();
+                        $('.made').fadeIn();
+                        $('.zoom-icon').removeClass('zoom-icon-out').addClass('zoom-icon-in');
+                        setTimeout(function () {
+                            $('.magazine').addClass('animated').removeClass('zoom-in');
+                            resizeViewport();
+                        }, 0);
+                    }
+                }
+            });
+
+            if ($.isTouch)
+                $('.magazine-viewport').bind('zoom.doubleTap', zoomTo);
+            else
+                $('.magazine-viewport').bind('zoom.tap', zoomTo);
+
+            $(document).keydown(function (e) {
+                var previous = 37, next = 39, esc = 27;
+                switch (e.keyCode) {
+                    case previous: $('.magazine').turn('previous'); e.preventDefault(); break;
+                    case next: $('.magazine').turn('next'); e.preventDefault(); break;
+                    case esc: $('.magazine-viewport').zoom('zoomOut'); e.preventDefault(); break;
+                }
+            });
+
+            Hash.on('^page\/([0-9]*)$', {
+                yep: function (path, parts) {
+                    var page = parts[1];
+                    if (page !== undefined && $('.magazine').turn('is'))
+                        $('.magazine').turn('page', page);
+                },
+                nop: function (path) {
+                    if ($('.magazine').turn('is'))
+                        $('.magazine').turn('page', 1);
+                }
+            });
+
+            $(window).resize(resizeViewport).bind('orientationchange', resizeViewport);
+
+            if ($.isTouch) {
+                $('.magazine').bind('touchstart', regionClick);
+            } else {
+                $('.magazine').click(regionClick);
+            }
+
+            $('.next-button').on('click', function () {
+                $('.magazine').turn('next');
+            });
+
+            $('.previous-button').on('click', function () {
+                $('.magazine').turn('previous');
+            });
+
+            $("#slider").slider({
+                min: 1,
+                max: numberOfViews(flipbook),
+                start: function (event, ui) {
+                    if (!window._thumbPreview) {
+                        _thumbPreview = $('<div />', { 'class': 'thumbnail' }).html('<div></div>');
+                        setPreview(ui.value);
+                        _thumbPreview.appendTo($(ui.handle));
+                    } else setPreview(ui.value);
+                    moveBar(false);
+                },
+                slide: function (event, ui) {
+                    setPreview(ui.value);
+                },
+                stop: function (event, ui) {
+                    if (window._thumbPreview)
+                        _thumbPreview.removeClass('show');
+
+                    setTimeout(() => {
+                        $('.magazine').turn('page', Math.max(1, $(this).slider('value') * 2 - 2));
+                    }, 100);
+                }
+            });
+
+            resizeViewport();
+            $('.magazine').addClass('animated');
+        }
+
+        $('.zoom-icon').on('mouseover', function () {
+            $(this).addClass($(this).hasClass('zoom-icon-in') ? 'zoom-icon-in-hover' : 'zoom-icon-out-hover');
+        }).on('mouseout', function () {
+            $(this).removeClass('zoom-icon-in-hover zoom-icon-out-hover');
+        }).on('click', function () {
+            if ($(this).hasClass('zoom-icon-in'))
+                $('.magazine-viewport').zoom('zoomIn');
+            else if ($(this).hasClass('zoom-icon-out'))
+                $('.magazine-viewport').zoom('zoomOut');
+        });
+
+        $('#canvas').hide();
+
+        yepnope({
+            test: Modernizr.csstransforms,
+            yep: ['js/turn.min.js'],
+            nope: ['js/turn.html4.min.js', 'css/jquery.ui.html4.css'],
+            both: ['js/zoom.min.js', 'css/jquery.ui.css', 'js/magazine.js', 'css/magazine.css'],
+            complete: loadApp
+        });
+    </script>
+    <script>
+        let lastSparkleTime = 0;
+
+        document.addEventListener("mousemove", function (e) {
+            const now = Date.now();
+
+            if (now - lastSparkleTime > 100) {
+                const sparkle = document.createElement("div");
+                sparkle.classList.add("sparkle");
+
+                sparkle.style.position = "absolute";
+                sparkle.style.left = `${e.pageX}px`;
+                sparkle.style.top = `${e.pageY}px`;
+
+                document.getElementById("sparkle-container").appendChild(sparkle);
+
+                setTimeout(() => {
+                    sparkle.remove();
+                }, 1000);
+
+                lastSparkleTime = now;
+            }
+        });
+    </script>
+
+</body>
+
+</html>
